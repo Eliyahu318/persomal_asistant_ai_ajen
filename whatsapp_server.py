@@ -9,8 +9,11 @@ app = Flask(__name__)
 assistant = PersonalAssistant.load_state(name="twilio_user")
 
 # נקודת קצה ל־Twilio WhatsApp Webhook
-@app.route("/whatsapp", methods=["POST"])
+@app.route("/whatsapp", methods=["POST", "GET"])
 def whatsapp_webhook():
+    if request.method == "GET":
+        return "✅ WhatsApp webhook is live", 200
+
     # קבלת הודעה ומספר מהבקשה של טווילו
     incoming_msg = request.values.get("Body", "").strip()
     from_number = request.values.get("From", "")
