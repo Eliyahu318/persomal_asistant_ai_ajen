@@ -240,7 +240,7 @@ class PersonalAssistant:
             return response_to_user
 
         try:
-            task_to_remove = self.todo_list[index - 1]
+            task_to_remove = self.todo_list[index]
             self.todo_list.pop(index - 1)
             log_deleted_task(name=self.name, task=task_to_remove)
             save_json_file(self.todo_file, self.todo_list)
