@@ -6,7 +6,7 @@ from assistant import PersonalAssistant  # ייבוא העוזר האישי של
 app = Flask(__name__)
 
 # יצירת מופע מהעוזר האישי שלך
-assistant = PersonalAssistant(name="twilio_user")
+assistant = PersonalAssistant.load_state(name="twilio_user")
 
 # נקודת קצה ל־Twilio WhatsApp Webhook
 @app.route("/whatsapp", methods=["POST"])
