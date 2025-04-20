@@ -12,11 +12,12 @@ def root():
     # עונה ל‑Render Health‑Check
     return "🟢 OK", 200
 
-@app.route("/whatsapp", methods=["GET", "POST"])
+@app.route("/whatsapp", methods=["POST"])
 def whatsapp_webhook():
-    if request.method == "GET":
-        # Twilio ping / browser check
-        return "✅ WhatsApp webhook is live", 200
+    ...
+    incoming_msg = request.values.get("Body", "").strip()
+    from_number = request.values.get("From", "")
+    print(f"📩 הודעה מ-{from_number}: {incoming_msg}")   # ← החזרנו!
 
     incoming_msg = request.values.get("Body", "").strip()
     response_text = assistant.process_user_input(incoming_msg)
@@ -25,6 +26,7 @@ def whatsapp_webhook():
     twiml.message(response_text)
     # החזרת XML + הכותרת המתאימה
     return Response(str(twiml), mimetype="application/xml")
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))   # ← Render יספק PORT
