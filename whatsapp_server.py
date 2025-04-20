@@ -1,35 +1,32 @@
-from flask import Flask, request
+# whatsapp_server.py
+import os
+from flask import Flask, request, Response
 from twilio.twiml.messaging_response import MessagingResponse
-from assistant import PersonalAssistant  # ייבוא העוזר האישי שלך
+from assistant import PersonalAssistant
 
-# יצירת מופע Flask
 app = Flask(__name__)
+assistant = PersonalAssistant.load_state(name="twilio_user", confirm_callback="כן")
 
-# יצירת מופע מהעוזר האישי שלך
-assistant = PersonalAssistant.load_state(name="twilio_user")
+@app.route("/", methods=["GET"])
+def root():
+    # עונה ל‑Render Health‑Check
+    return "🟢 OK", 200
 
-# נקודת קצה ל־Twilio WhatsApp Webhook
-@app.route("/whatsapp", methods=["POST", "GET"])
+@app.route("/whatsapp", methods=["GET", "POST"])
 def whatsapp_webhook():
     if request.method == "GET":
+        # Twilio ping / browser check
         return "✅ WhatsApp webhook is live", 200
 
-    # קבלת הודעה ומספר מהבקשה של טווילו
     incoming_msg = request.values.get("Body", "").strip()
-    from_number = request.values.get("From", "")
-
-    print(f"📩 הודעה מ-{from_number}: {incoming_msg}")
-
-    # עיבוד ההודעה בעזרת העוזר האישי
     response_text = assistant.process_user_input(incoming_msg)
 
-    # יצירת תגובה בחזרה ל־Twilio
-    reply = MessagingResponse()
-    reply.message(response_text)
+    twiml = MessagingResponse()
+    twiml.message(response_text)
+    # החזרת XML + הכותרת המתאימה
+    return Response(str(twiml), mimetype="application/xml")
 
-    return str(reply)
-
-
-# הפעלה מקומית בעת פיתוח
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))   # ← Render יספק PORT
+    app.run(host="0.0.0.0", port=port)
+
