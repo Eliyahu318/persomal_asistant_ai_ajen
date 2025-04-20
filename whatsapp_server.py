@@ -12,7 +12,7 @@ def root():
     # עונה ל‑Render Health‑Check
     return "🟢 OK", 200
 
-@app.route("/whatsapp", methods=["POST"])
+@app.route("/whatsapp", methods=["GET", "POST"])
 def whatsapp_webhook():
     ...
     incoming_msg = request.values.get("Body", "").strip()

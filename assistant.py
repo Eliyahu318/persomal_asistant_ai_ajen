@@ -64,6 +64,7 @@ class PersonalAssistant:
         response = ask_gpt(system_prompt= prompt, user_input=question)
         if DEBUG_MODE:
             logging.debug(response)
+            logging.debug(question)
         return response
 
     def dispatch_command(self, intent: str):
