@@ -29,6 +29,6 @@ def whatsapp_webhook():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))   # ← Render יספק PORT
+    port = int(os.environ.get("PORT", 4000))   # ← Render יספק PORT
     app.run(host="0.0.0.0", port=port)
 
