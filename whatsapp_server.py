@@ -5,7 +5,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 from assistant import PersonalAssistant
 
 app = Flask(__name__)
-assistant = PersonalAssistant.load_state(name="twilio_user", confirm_callback="כן")
+assistant = PersonalAssistant.load_state(name="twilio_user", confirm_callback=lambda msg: "בן")
 
 @app.route("/", methods=["GET"])
 def root():
