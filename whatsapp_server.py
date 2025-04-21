@@ -1,3 +1,4 @@
+import logging
 import os
 from flask import Flask, request, Response
 from twilio.twiml.messaging_response import MessagingResponse
@@ -28,6 +29,7 @@ def whatsapp_webhook():
     twiml = MessagingResponse()
     twiml.message(response_text)
     print(response_text)
+    logging.info(response_text)
     return Response(str(twiml), mimetype="application/xml")
 
 
