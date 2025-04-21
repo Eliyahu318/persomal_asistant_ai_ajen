@@ -1,12 +1,13 @@
 from assistant import PersonalAssistant
 
 
-def ask_user_confirm(msg):
+def ask_user_confirm(msg: str) -> input:
     return input(msg)
 
 
 def main():
-    ai_assistant = PersonalAssistant.load_state("Ajent 1", confirm_callback=ask_user_confirm)
+    ai_assistant = PersonalAssistant.load_state("בוב", confirm_callback=ask_user_confirm)
+    print(ai_assistant.personal_welcome_message())
     while True:
         user_input = input("")
         response = ai_assistant.process_user_input(question=user_input)

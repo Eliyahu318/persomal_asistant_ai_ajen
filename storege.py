@@ -23,12 +23,6 @@ def load_json_file(path: str) -> dict:
         return data
 
 
-# def append_jsonl_file(path: str, entry: dict):
-#     with open(path, "r+", encoding='utf-8') as f:
-#         json_data_list = json.load(f)
-#         json_data_list.append(entry)
-#         json.dump(json_data_list, f, ensure_ascii=False, indent=2)
-
 def append_jsonl_file(path: str, entry: dict):
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
