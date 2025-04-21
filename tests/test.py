@@ -10,7 +10,7 @@ from gpt_client import ask_gpt
 def test_dispatch_command_shmor():
     assistant = PersonalAssistant.load_state(name="test", confirm_callback=lambda msg: "כן")
     result = assistant.dispatch_command("שמור")
-    assert result == assistant.handle_save_question
+    assert result == assistant.save_question
 
 
 def test_handle_save_question_mocked():
@@ -22,7 +22,7 @@ def test_handle_save_question_mocked():
     }]
 
     with patch.object(PersonalAssistant, "parse_save_question_with_gpt", return_value=fake_gpt_output):
-        result = assistant.handle_save_question("יש לי פגישה מחר ב9")
+        result = assistant.save_question("יש לי פגישה מחר ב9")
         assert "נשמרו בהצלחה" in result
         assert len(assistant._todo_list) == 1
         assert assistant._todo_list[0]["description"] == "פגישה חשובה"
@@ -37,7 +37,7 @@ def test_handle_delete_task_question_mocked():
     }
 
     with patch.object(PersonalAssistant, "parse_delete_task_question_with_gpt", return_value=fake_gpt_output):
-        result = assistant.handle_delete_task_with_gpt("תמחק את הםגישה מחר")  # "אין לי פגישה מחר" -> הוא לא מבין
+        result = assistant.ensure_delete_intent("תמחק את הםגישה מחר")  # "אין לי פגישה מחר" -> הוא לא מבין
 
         assert len(assistant._todo_list) == 0
         assert "נמחקה" in result
@@ -79,9 +79,9 @@ def clean_test_files():
 # === DISPATCH ===
 def test_dispatch_command():
     pa = PersonalAssistant.load_state(TEST_NAME, confirm_callback=lambda msg: "כן")
-    assert pa.dispatch_command("שמור") == pa.handle_save_question
-    assert pa.dispatch_command("מחק משימה") == pa.handle_delete_task_with_gpt
-    assert pa.dispatch_command("הצג משימות") == pa.handle_show_tasks_question
+    assert pa.dispatch_command("שמור") == pa.save_question
+    assert pa.dispatch_command("מחק משימה") == pa.ensure_delete_intent
+    assert pa.dispatch_command("הצג משימות") == pa.show_tasks_question
     assert pa.dispatch_command("מחק כל המשימות") == pa.handle_clear_tasks_question
     assert pa.dispatch_command("איפוס") == pa.handle_reset_question
     assert pa.dispatch_command("משהו אחר") is None
@@ -104,7 +104,7 @@ def test_handle_save_question():
     pa._todo_list = []
     mock_tasks = [{"description": "פגישה חשובה", "time": "15/04/2025 09:00"}]
     with patch.object(PersonalAssistant, 'parse_save_question_with_gpt', return_value=mock_tasks):
-        response = pa.handle_save_question("יש לי פגישה מחר ב־9")
+        response = pa.save_question("יש לי פגישה מחר ב־9")
         assert "נשמרו בהצלחה" in response
         assert len(pa._todo_list) == 1
         assert pa._todo_list[0]["description"] == "פגישה חשובה"
@@ -117,7 +117,7 @@ def test_handle_show_tasks():
         {"description": "לשלם חשבון", "time": "15/04/2025 10:00"},
         {"description": "פגישה", "time": None}
     ]
-    response = pa.handle_show_tasks_question()
+    response = pa.show_tasks_question()
     assert "1. לשלם חשבון (15/04/2025 10:00)" in response
     assert "2. פגישה" in response
 
@@ -131,7 +131,7 @@ def test_handle_delete_task():
     ]
     mock_delete = {"index": 1, "description": "פגישה"}
     with patch.object(PersonalAssistant, 'parse_delete_task_question_with_gpt', return_value=mock_delete):
-        response = pa.handle_delete_task_with_gpt("מחק את הפגישה")
+        response = pa.ensure_delete_intent("מחק את הפגישה")
         assert "נמחקה" in response
         assert len(pa._todo_list) == 0
 

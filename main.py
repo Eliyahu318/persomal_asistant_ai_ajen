@@ -1,19 +1,22 @@
+import logging
+
 from assistant import PersonalAssistant
 
 
-def ask_user_confirm(msg: str) -> input:
-    return input(msg)
+# def ask_user_confirm(msg: str) -> input:
+#     return input(msg)
 
 
 def main():
-    ai_assistant = PersonalAssistant.load_state("בוב", confirm_callback=ask_user_confirm)
+    ai_assistant = PersonalAssistant.load_state("בוב")  # , confirm_callback=ask_user_confirm)
     print(ai_assistant.personal_welcome_message())
     while True:
         user_input = input("")
         response = ai_assistant.process_user_input(question=user_input)
-        if response == "break":
+        if response.lower() == "להתראות!":
             break
-        print(response)
+        # print(response)
+        logging.info(response)
 
     # print(ai_assistant.todo_list)
     # ai2 = PersonalAssistant.load_state("2")

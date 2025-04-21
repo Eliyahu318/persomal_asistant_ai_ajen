@@ -11,7 +11,6 @@ from prompts import PARSE_TASK_WITH_GPT_PROMPT
 from storege import ensure_file_exists, save_json_file, load_json_file, log_deleted_message, log_deleted_task
 from gpt_client import ask_gpt
 
-
 # Enable debug logging
 DEBUG_MODE = True
 logging.basicConfig(level=logging.DEBUG)
@@ -39,6 +38,14 @@ TODAY = date.today().isoformat()  # Current date for temporal context
 
 class PersonalAssistant:
     def __init__(self, name: str, todo_list=None, messages=None, confirm_callback=None):
+        """
+        Initializes the PersonalAssistant instance.
+
+        @param name: Name identifier for the assistant instance.
+        @param todo_list: Optional initial task list.
+        @param messages: Optional chat history.
+        @param confirm_callback: Optional callback for yes/no confirmations.
+        """
         self._name = name
         self._confirm_callback = confirm_callback
         self._awaiting_confirmation = None
@@ -55,27 +62,24 @@ class PersonalAssistant:
         }]
 
     def personal_welcome_message(self) -> str:
+        """Returns a welcome message personalized with the assistant's name."""
         return WELCOME_MESSAGE.format(name=self._name)
 
-
     def parse_question_intent_with_gpt(self, question: str) -> str:
-        # Perses the user intent and return the right code word.
-        prompt = PARSE_QUESTION_WITH_GPT_PROMPT
-        # Send request to GPT and clean the text response - wrapping triple backticks (```) if present
-        response = ask_gpt(system_prompt= prompt, user_input=question)
+        """Uses GPT to classify the user's intent from the input question."""
+        response = ask_gpt(system_prompt=PARSE_QUESTION_WITH_GPT_PROMPT, user_input=question)
         if DEBUG_MODE:
             logging.debug(response)
-            logging.debug(question)
         return response
 
     def dispatch_command(self, intent: str) -> Callable[..., str] | None:
-        # Get the user intent code from parse_question_intent_with_gpt, and return the right function or None.
+        """Returns the appropriate handler function based on the detected intent."""
         intent_handlers = {
-            "שמור": self.handle_save_question,
-            "מחק משימה": self.handle_delete_task_with_gpt,
-            "איפוס": self.handle_reset_question,
-            "הצג משימות": self.handle_show_tasks_question,
-            "מחק כל המשימות": self.handle_clear_tasks_question
+            "שמור": self.save_question,
+            "מחק משימה": self.ensure_delete_intent,
+            "איפוס": self.ensure_reset_intent,
+            "הצג משימות": self.show_tasks_question,
+            "מחק כל המשימות": self.ensure_delete_all_tasks_intent
 
         }
         try:
@@ -84,39 +88,17 @@ class PersonalAssistant:
         except KeyError:
             return None
 
-    """def process_user_input(self, question) -> str | Callable[..., str]:
-        
-        The main loop that handles user input and routes it to the correct handler This acts as the central
-        controller for the assistant.
-        Uses parse_question_intent_with_gpt to get the word code, and active the
-        right func with dispatch_command or just send the question to gpt if it's not a command quest.
-        
-        # while True:
-        # question = question
-        if question.lower() == "exit":
-            self.save_state()
-            return "break"
-
-        question_intent_with_gpt = self.parse_question_intent_with_gpt(question)
-        func = self.dispatch_command(question_intent_with_gpt)
-        if func:
-            try:
-                response = func(question)
-                return response
-            except TypeError:
-                response = func()
-                return response
-
-        elif question == "בקרה":
-            logging.debug(self.messages)
-            return "📊 היסטוריית השיחה הודפסה ללוג."
-        else:
-            # logging.info(question_intent_with_gpt)  # It's not a command, so the ajent keep chat with the user.
-            response = question_intent_with_gpt
-            self.keep_chat_history(question=question, response=question_intent_with_gpt)
-            return response"""
-
     def process_user_input(self, question: str) -> str:
+        """
+        Processes the user's message and returns the assistant's response.
+
+        This method is the main entry point for user interaction. It checks if the assistant is
+        currently waiting for a yes/no confirmation. If so, it handles that confirmation.
+        Otherwise, it uses GPT to determine the user's intent and routes it to the appropriate handler.
+
+        @param question: The user's message as a string.
+        @return: A string response from the assistant.
+        """
         if self._awaiting_confirmation:
             answer = question.strip().lower()
             if answer == "כן":
@@ -129,36 +111,36 @@ class PersonalAssistant:
             else:
                 return "ענה בבקשה 'כן' או 'לא' כדי שאוכל להמשיך."
 
-        if question.lower() == "exit":
+        elif question.lower() == "exit":
             self.save_state()
             return "להתראות!"
 
-        intent = self.parse_question_intent_with_gpt(question)
-        handler = self.dispatch_command(intent)
-        if handler:
-            try:
-                return handler(question)
-            except TypeError:
-                return handler()
         elif question == "בקרה":
             logging.debug(self._messages)
             return str(self._messages)  # "📊 היסטוריית השיחה הודפסה ללוג."
-        else:
-            self.keep_chat_history(question, intent)
-            return intent
 
+        else:
+            intent = self.parse_question_intent_with_gpt(question)
+            handler = self.dispatch_command(intent)
+            if handler:
+                try:
+                    return handler(question)
+                except TypeError:
+                    return handler()
+
+            else:
+                self.keep_chat_history(question, intent)
+                return intent
 
     def parse_save_question_with_gpt(self, question: str) -> list:
-        # Sends the user's text to GPT for task extraction.
+        """Uses GPT to extract task information from the user's input."""
         prompt = PARSE_TASK_WITH_GPT_PROMPT.format(today=TODAY)
-        # Send request to GPT and clean the text response - wrapping triple backticks (```) if present
         response = ask_gpt(system_prompt=prompt, user_input=question)
         try:
             tasks = json.loads(response)  # Parse JSON string to Python object
             if isinstance(tasks, dict):
                 tasks = [tasks]  # Ensure it's always a list
-            # Validate format of each task
-            assert isinstance(tasks, list)
+            assert isinstance(tasks, list)  # Validate format of each task
             for task in tasks:
                 assert "description" in task and "time" in task
             return tasks
@@ -166,7 +148,6 @@ class PersonalAssistant:
         except json.JSONDecodeError:
             if DEBUG_MODE:
                 logging.debug("❌ JSON לא תקין – מנסה ניסוח מחודש...")
-
             # Retry once with a simpler prompt
             fallback_prompt = (
                 f"היום זה {TODAY}. החזר רק JSON תקין! לדוגמה: "
@@ -180,7 +161,6 @@ class PersonalAssistant:
                 for task in tasks:
                     assert "description" in task and "time" in task
                 return tasks
-
             except Exception as e:
                 if DEBUG_MODE:
                     logging.exception("❌ גם הניסיון השני נכשל – שגיאה:")
@@ -190,106 +170,83 @@ class PersonalAssistant:
             if DEBUG_MODE:
                 logging.debug("הפלט לא כולל description ו-time כנדרש:")
             raise
-
         except Exception:
             if DEBUG_MODE:
                 logging.debug("שגיאה לא צפויה:")
             raise
 
-    def handle_save_question(self, question: str) -> str:
-        # Handle the extract task from parse_task_with_gpt. Adds to todo_list, and to todo_file.
+    def save_question(self, question: str) -> str:
+        """Handles task saving based on user input and returns a success/failure message."""
         try:
-            task = self.parse_save_question_with_gpt(question)  # Extract task(s) from user input
+            task = self.parse_save_question_with_gpt(question)
             if task:
-                self._todo_list.extend(task)  # Add to current todo_list
-                save_json_file(self._todo_file, self._todo_list)  # Persist to file
+                self._todo_list.extend(task)
+                save_json_file(self._todo_file, self._todo_list)
                 response_text = f"{len(task)} משימות נשמרו בהצלחה. איך עוד אפשר לעזור?"
-                # logging.info(response_text)
                 self.keep_chat_history(question, response_text)
                 return response_text
             else:
                 raise Exception("No tasks returned from GPT")
+
         except Exception as e:
             response_text = "לא הצלחתי להבין את המשימה. נסה לנסח שוב."
             self.keep_chat_history(question, response_text)
-            logging.error(response_text)  # מה התפקיד של זה? האם זה נצרך?
             if DEBUG_MODE:
                 logging.debug(f"שגיאה: {e}")
             return response_text
 
-    def handle_show_tasks_question(self) -> str:
-        # Print all tasks in the list in a numbered format
+    def show_tasks_question(self) -> str:
+        """Returns a string of all tasks currently saved."""
         if not self._todo_list:
-            # logging.info("אין משימות כרגע.")
-            show_response = "אין משימות כרגע."
-            return show_response
+            return "אין משימות כרגע."
         show_str = ""
         for i, task in enumerate(self._todo_list, 1):
             desc = task.get("description", "ללא תיאור")
             time = task.get("time")
             if time:
                 show_str += f"{i}. {desc} ({time})\n"
-                # logging.info(show_str)
             else:
                 show_str += f"{i}. {desc}\n"
-                # logging.info(show_str)
         return show_str
 
     def parse_delete_task_question_with_gpt(self, question: str) -> dict | None:
-        # Sends the deletion request and current tasks to GPT, asking which task the user meant to delete.
+        """Uses GPT to determine which task the user wants to delete."""
         task_list_json = json.dumps(self._todo_list, ensure_ascii=False, indent=2)
         prompt = PARSE_DELETE_QUESTION_WITH_GPT_PROMPT.format(task_list=task_list_json)
 
         response = ask_gpt(system_prompt=prompt, user_input=question)
         try:
-            parsed = json.loads(response)
-            if not parsed:
+            task_parsed = json.loads(response)
+            if not task_parsed:
                 raise
-            if not ("index" in parsed and "description" in parsed):
+            if not ("index" in task_parsed and "description" in task_parsed):
                 raise
-            return parsed
+            return task_parsed
+
         except Exception as e:
             if DEBUG_MODE:
                 logging.exception("❌ לא הצלחתי להבין את בקשת המחיקה.", e)
             return None
 
-    """def handle_delete_task_with_gpt(self, question: str) -> str | Exception:
-        # Get the exact index task to delete from parse_delete_task_question_with_gpt func and handle it.
-        exact_task = self.parse_delete_task_question_with_gpt(question)
-        if not exact_task:
-            logging.error("לא הובן מה למחוק")
-            response_to_user = "❌ לא הצלחתי להבין מה למחוק."
-            return response_to_user
-
-        index = exact_task["index"]
-        description = exact_task["description"]
-        # confirm = self.confirm_callback(f'האם למחוק את המשימה: "{description}" (#{index})? [כן/לא] ')  # input(f'האם למחוק את המשימה: "{description}" (#{index})? [כן/לא] ')
-        self._awaiting_confirmation = (self._delete_task, (index, description, question))
-        if confirm.strip() != "כן":
-            logging.info("ביטול פעולה.")
-            response_to_user = "הפעולה בוטלה"
-            return response_to_user
-
+    def delete_task(self, index: int, desc: str, original_question: str) -> str:
+        """Prepares task deletion by asking for confirmation from the user."""
         try:
-            task_to_remove = self._todo_list[index]
-            self._todo_list.pop(index - 1)
-            log_deleted_task(name=self._name, task=task_to_remove)
+            task = self._todo_list.pop(index - 1)
+            log_deleted_task(self._name, task)
             save_json_file(self._todo_file, self._todo_list)
-            response_text = f"המשימה '{description}' נמחקה מהרשימה."
-            # logging.info(response_text)
-            self.handle_show_tasks_question()
-            self.keep_chat_history(question, response_text)
-            response_to_user = response_text
-            return response_to_user
-        except IndexError as i:
-            logging.error("אינדקס לא חוקי.")
-            return "אינדקס לא חוקי"
+            response = f"המשימה '{desc}' נמחקה."
+        except IndexError:
+            logging.error("אינדקס לא חוקי")
+            response = "אינדקס לא חוקי"
         except Exception as e:
             if DEBUG_MODE:
                 logging.debug("debug:  ", e)
-            return "שגיאה לא צפויה"""
+            response = "שגיאה בעת מחיקה."
+        self.keep_chat_history(original_question, response)
+        return response
 
-    def handle_delete_task_with_gpt(self, question: str) -> str:
+    def ensure_delete_intent(self, question: str) -> str:
+        """Executes confirmed deletion of a task by index."""
         try:
             task = self.parse_delete_task_question_with_gpt(question)
             index = task["index"]
@@ -299,76 +256,54 @@ class PersonalAssistant:
         except Exception:
             return "❌ לא הצלחתי להבין מה למחוק."
 
-    def delete_task(self, index: int, desc: str, original_question: str) -> str:
-        try:
-            task = self._todo_list.pop(index)
-            log_deleted_task(self._name, task)
-            save_json_file(self._todo_file, self._todo_list)
-            response = f"המשימה '{desc}' נמחקה."
-        except Exception:
-            response = "שגיאה בעת מחיקה."
-        self.keep_chat_history(original_question, response)
-        return response
+    def clear_all_tasks(self, question):
+        """Clears all saved tasks."""
+        save_json_file(self._todo_file, self._todo_list)
+        self._todo_list.clear()
+        response_text = "רשימת המשימות נמחקה, איך עוד אפשר לעזור?."
+        self.keep_chat_history(question, response_text)
+        return response_text
 
-    def handle_clear_tasks_question(self, question: str) -> str:
-        # Clear all saved tasks from memory and file
-        confirm = self._confirm_callback("אתה בטוח שאתה מעוניין למחוק את כל המשימות? (כן/לא)")  # input("אתה בטוח שאתה מעוניין למחוק את כל המשימות? (כן/לא)")
-        if confirm == "כן":
-            save_json_file(self._todo_file, self._todo_list)
-            self._todo_list.clear()
-            response_text = "רשימת המשימות נמחקה, איך עוד אפשר לעזור?."
-            # logging.info(response_text)
-            self.keep_chat_history(question, response_text)
-            return response_text
-        else:
-            response_text = "הבקשה בוטלה והרשימה לא נחמקה, איך עוד אפשר לעזור?."
-            # logging.info(response_text)
-            self.keep_chat_history(question, response_text)
-            return response_text
+    def ensure_delete_all_tasks_intent(self, original_question: str):
+        """Executes confirmed deletion all task."""
+        self._awaiting_confirmation = (self.clear_all_tasks, original_question)
+        return "האם למחוק את כל המשימות? [כן/לא]"
 
-    def handle_clear_messages_question(self) -> str:
-        # Clear the chat history from main ajent file' and save it to log deleted chat file.
-        # TODO: Add try/except in case 'chat_log_{name}.json' fails to write. Optionally, rotate or timestamp backups.
+    def clear_messages(self) -> str:
+        """Clears the assistant's message history."""
         entry = {
-                "deleted_at": datetime.now().isoformat(timespec="seconds"),
-                "task": self._messages
-            }
+            "deleted_at": datetime.now().isoformat(timespec="seconds"),
+            "task": self._messages
+        }
         log_deleted_message(self._name, entry=entry)
         self._messages.clear()
-        # logging.info("היסטוריית השיחות נמחקה")
         return "היסטוריית השיחות נמחקה"
 
-    def handle_reset_question(self, question: str) -> str:
-        # Perform full reset of conversation and tasks
-        confirm = self._confirm_callback("אתה בטוח שאתה מעוניין לאפס את כל המשימות ואת היסטוריית השיחה בנינו? (כן/לא)")  # input("אתה בטוח שאתה מעוניין לאפס את כל המשימות ואת היסטוריית השיחה בנינו? (כן/לא)")
-        if confirm == "כן":
-            self.handle_clear_tasks_question(question)
-            self.handle_clear_messages_question()
-            self._messages.append({
-                "role": "system",
-                "content": "אתה עוזר אישי חכם. תזכור את מה שהמשתמש אומר וענה בצורה ברורה ונעימה."
-            })
-            # logging.info(WELCOME_MESSAGE)
-            return WELCOME_MESSAGE
-        else:
-            # logging.info("הבקשה בוטלה.")
-            response_text = "לא, אני לא מעוניין לאפס הכל"
-            self.keep_chat_history(question, response_text)
-            return ", איך עוד אפשר לעזור? הבקשה בוטלה."
+    def reset_all(self, question: str) -> str:
+        """Performs a full reset of tasks and messages."""
+        self.clear_all_tasks(question)
+        self.clear_messages()
+        self._messages.append({
+            "role": "system",
+            "content": "אתה עוזר אישי חכם. תזכור את מה שהמשתמש אומר וענה בצורה ברורה ונעימה."
+        })
+        return self.personal_welcome_message()
 
+    def ensure_reset_intent(self, original_question: str):
+        """Executes confirmed reset"""
+        self._awaiting_confirmation = (self.reset_all, original_question)
+        return "האם ברצונך לאפס הכל ולמחוק את המשמיות ואת היסטוריית השיחה? [כן/לא]"
 
     def keep_chat_history(self, question, response):
-        # Append user question and GPT response to the message history
+        """Appends the latest exchange to the assistant's memory."""
         self._messages.append({"role": "user", "content": question})
         self._messages.append({"role": "assistant", "content": f"{response}"})
 
     @classmethod
-    def load_state(cls, name: str, confirm_callback = None) -> "PersonalAssistant":
+    def load_state(cls, name: str, confirm_callback=None) -> "PersonalAssistant":
         """
         Loads a saved PersonalAssistant instance by name.
-
-        Reads tasks and messages from files if they exist,
-        otherwise initializes them with default values.
+        Read tasks and messages from files if they exist, otherwise initializes them with default values.
         """
         todo_file = FILE_TASKS_NAME.format(name=name)
         chat_file = FILE_MESSAGES_NAME.format(name=name)
@@ -385,6 +320,6 @@ class PersonalAssistant:
         return cls(name=name, todo_list=todo_list, messages=messages, confirm_callback=confirm_callback)
 
     def save_state(self):
+        """Saves current task list and message history to disk."""
         save_json_file(self._todo_file, self._todo_list)
         save_json_file(self._chat_file, self._messages)
-
