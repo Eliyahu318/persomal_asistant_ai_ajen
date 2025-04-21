@@ -142,7 +142,7 @@ class PersonalAssistant:
                 return handler()
         elif question == "בקרה":
             logging.debug(self._messages)
-            return self._messages  # "📊 היסטוריית השיחה הודפסה ללוג."
+            return str(self._messages)  # "📊 היסטוריית השיחה הודפסה ללוג."
         else:
             self.keep_chat_history(question, intent)
             return intent
