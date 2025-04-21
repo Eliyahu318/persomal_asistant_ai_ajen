@@ -104,10 +104,14 @@ class PersonalAssistant:
             if answer == "כן":
                 func, args = self._awaiting_confirmation
                 self._awaiting_confirmation = None
-                return func(*args)
+                response_text = func(*args)
+                self.keep_chat_history(question, response_text)
+                return response_text
             elif answer == "לא":
                 self._awaiting_confirmation = None
-                return "הפעולה בוטלה. איך אפשר לעזור?"
+                response_text = "הפעולה בוטלה. איך אפשר לעזור?"
+                self.keep_chat_history(question, response_text)
+                return response_text
             else:
                 return "ענה בבקשה 'כן' או 'לא' כדי שאוכל להמשיך."
 
@@ -242,7 +246,7 @@ class PersonalAssistant:
             if DEBUG_MODE:
                 logging.debug("debug:  ", e)
             response = "שגיאה בעת מחיקה."
-        self.keep_chat_history(original_question, response)
+        # self.keep_chat_history(original_question, response)
         return response
 
     def ensure_delete_intent(self, question: str) -> str:
@@ -252,22 +256,28 @@ class PersonalAssistant:
             index = task["index"]
             desc = task["description"]
             self._awaiting_confirmation = (self.delete_task, (index, desc, question))
-            return f'האם למחוק את המשימה: "{desc}" (#{index})? [כן/לא]'
+            response_text = f'האם למחוק את המשימה: "{desc}" (#{index})? [כן/לא]'
+            self.keep_chat_history(question, response_text)
+            return response_text
         except Exception:
-            return "❌ לא הצלחתי להבין מה למחוק."
+            response_text = "❌ לא הצלחתי להבין מה למחוק."
+            self.keep_chat_history(question, response_text)
+            return response_text
 
     def clear_all_tasks(self, question):
         """Clears all saved tasks."""
         save_json_file(self._todo_file, self._todo_list)
         self._todo_list.clear()
         response_text = "רשימת המשימות נמחקה, איך עוד אפשר לעזור?."
-        self.keep_chat_history(question, response_text)
+        # self.keep_chat_history(question, response_text)
         return response_text
 
     def ensure_delete_all_tasks_intent(self, original_question: str):
         """Executes confirmed deletion all task."""
         self._awaiting_confirmation = (self.clear_all_tasks, original_question)
-        return "האם למחוק את כל המשימות? [כן/לא]"
+        response_text = "האם למחוק את כל המשימות? [כן/לא]"
+        self.keep_chat_history(original_question, response_text)
+        return response_text
 
     def clear_messages(self) -> str:
         """Clears the assistant's message history."""
@@ -292,7 +302,9 @@ class PersonalAssistant:
     def ensure_reset_intent(self, original_question: str):
         """Executes confirmed reset"""
         self._awaiting_confirmation = (self.reset_all, original_question)
-        return "האם ברצונך לאפס הכל ולמחוק את המשמיות ואת היסטוריית השיחה? [כן/לא]"
+        response_text = "האם ברצונך לאפס הכל ולמחוק את המשמיות ואת היסטוריית השיחה? [כן/לא]"
+        self.keep_chat_history(original_question, response_text)
+        return response_text
 
     def keep_chat_history(self, question, response):
         """Appends the latest exchange to the assistant's memory."""
