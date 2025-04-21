@@ -6,7 +6,7 @@ from assistant import PersonalAssistant
 app = Flask(__name__)
 
 
-pending_confirmations = {}
+user_sessions = {}
 
 
 @app.route("/", methods=["GET"])
@@ -17,11 +17,12 @@ def root():
 @app.route("/whatsapp", methods=["GET", "POST"])
 def whatsapp_webhook():
     incoming_msg = request.values.get("Body", "").strip()
-    from_number = request.values.get("From", "")
+    from_number = request.values.get("From", "").replace("whatsapp", "")
     print(f"📩 הודעה מ-{from_number}: {incoming_msg}")
 
-    clean_name = from_number.replace("whatsapp:", "")
-    assistant = PersonalAssistant.load_state(name=clean_name)
+    if from_number not in user_sessions:
+        user_sessions[from_number] = PersonalAssistant.load_state(name=from_number)
+
 
     # שלב 1 – בדיקת "כן"/"לא" עבור פעולה בהמתנה
     # if from_number in pending_confirmations:
