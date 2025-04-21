@@ -27,6 +27,7 @@ def whatsapp_webhook():
     response_text = assistant.process_user_input(incoming_msg)
     twiml = MessagingResponse()
     twiml.message(response_text)
+    print(response_text)
     return Response(str(twiml), mimetype="application/xml")
 
 
