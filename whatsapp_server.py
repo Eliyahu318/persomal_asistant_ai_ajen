@@ -8,7 +8,6 @@ app = Flask(__name__)
 
 user_sessions = {}
 
-
 @app.route("/", methods=["GET"])
 def root():
     return "🟢 OK", 200
@@ -23,16 +22,8 @@ def whatsapp_webhook():
     if from_number not in user_sessions:
         user_sessions[from_number] = PersonalAssistant.load_state(name=from_number)
 
+    assistant = user_sessions[from_number]
 
-    # שלב 1 – בדיקת "כן"/"לא" עבור פעולה בהמתנה
-    # if from_number in pending_confirmations:
-    #     confirmation = incoming_msg
-    #     if confirmation in ["כן", "לא"]:
-    #         response_text = assistant.process_user_input(confirmation)
-    #         del pending_confirmations[from_number]
-    #     else:
-    #         response_text = "ענה בבקשה 'כן' או 'לא'."
-    # else:
     response_text = assistant.process_user_input(incoming_msg)
     twiml = MessagingResponse()
     twiml.message(response_text)
