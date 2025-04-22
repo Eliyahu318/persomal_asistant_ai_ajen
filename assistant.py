@@ -104,9 +104,13 @@ class PersonalAssistant:
             if answer == "כן":
                 func, args = self._awaiting_confirmation
                 self._awaiting_confirmation = None
-                response_text = func(*args)
-                self.keep_chat_history(question, response_text)
-                return response_text
+                if func is not None:
+                    response_text = func(*args)
+                    self.keep_chat_history(question, response_text)
+                    return response_text
+                else:
+                    response_text = "שגיאה. לא קיימת פעולה לאישור. איך אפשר לעזור?"
+                    return response_text
             elif answer == "לא":
                 self._awaiting_confirmation = None
                 response_text = "הפעולה בוטלה. איך אפשר לעזור?"
