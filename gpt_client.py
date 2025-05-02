@@ -3,12 +3,14 @@ import re
 from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
+from config import settings
+
 
 DEBUG_MODE = True
 
 # Set your OpenAI API key
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI()
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=settings.openai_api_key)
 
 
 def clean_gpt_response(text_response: str) -> str:

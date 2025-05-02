@@ -1,9 +1,10 @@
 import os
 import json
+from config import settings
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FILE_LOG_DELETED_TASKS_NAME = os.path.join(BASE_DIR, "data", "deleted_tasks_{name}.jsonl")
-FILE_LOG_DELETED_MESSAGES = os.path.join(BASE_DIR, "data", "deleted_messages_{name}.jsonl")
+FILE_LOG_DELETED_TASKS_NAME = str(settings.data_dir / settings.log_lead_template)  # os.path.join(BASE_DIR, "data", "deleted_tasks_{name}.jsonl")
+FILE_LOG_DELETED_MESSAGES = str(settings.data_dir / settings.log_chat_template)  # os.path.join(BASE_DIR, "data", "deleted_messages_{name}.jsonl")
 
 
 def ensure_file_exists(file_path: str):

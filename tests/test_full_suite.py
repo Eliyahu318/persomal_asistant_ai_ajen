@@ -15,59 +15,71 @@ import pytest
 #  Fixtures & helpers
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def tmp_env(tmp_path, monkeypatch):
-    """Redirect *all* on‑disk I/O into pytest's ``tmp_path`` sandbox.
+    """Redirect filesystem + env‑vars into an isolated sandbox."""
+    # 1) fake env
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "fake-token")
 
-    We patch paths *after* re‑loading the modules so the constants defined at
-    import‑time are overwritten with sandbox versions.
-    """
+    # 2) patch data‑files base‑dir
+    import assistant as _assistant_mod
+    from storeage import storage as _storege_mod
 
-    import importlib
+    tmp_dir = str(tmp_path)
+    _assistant_mod.FILE_TASKS_NAME = f"{tmp_dir}/todo_list_{{name}}.json"
+    _assistant_mod.FILE_MESSAGES_NAME = f"{tmp_dir}/chat_log_{{name}}.json"
+    _storege_mod.FILE_LOG_DELETED_LEAD_NAME = f"{tmp_dir}/deleted_tasks_{{name}}.jsonl"
+    _storege_mod.FILE_LOG_DELETED_CHAT_NAME = f"{tmp_dir}/deleted_messages_{{name}}.jsonl"
 
-    # 1. Import the real modules so we can reload later.
-    import assistant as _assistant_mod  # noqa: E402 – runtime import inside fixture
-    import storege as _storege_mod  # noqa: E402
+    # 3) reload config so settings read the new env
+    import importlib, config as _config
 
-    # 2. Make both modules believe their BASE_DIR is tmp_path
-    monkeypatch.setattr(_assistant_mod, "BASE_DIR", tmp_path, raising=False)
-    monkeypatch.setattr(_storege_mod, "BASE_DIR", tmp_path, raising=False)
-
-    # 3. Reload so module‑level code runs with new BASE_DIR
-    importlib.reload(_assistant_mod)
-    importlib.reload(_storege_mod)
-
-    # 4. Overwrite filename templates generated at import‑time *after* reload
-    _assistant_mod.FILE_TASKS_NAME = os.path.join(tmp_path, "todo_list_{name}.json")
-    _assistant_mod.FILE_MESSAGES_NAME = os.path.join(tmp_path, "chat_log_{name}.json")
-
-    _storege_mod.FILE_LOG_DELETED_TASKS_NAME = os.path.join(
-        tmp_path, "deleted_tasks_{name}.jsonl")
-    _storege_mod.FILE_LOG_DELETED_MESSAGES = os.path.join(
-        tmp_path, "deleted_messages_{name}.jsonl")
+    importlib.reload(_config)
 
     yield tmp_path
 
 
+def test_openai_key_from_env(tmp_env):
+    from config import settings
+
+    assert settings.openai_api_key == "test-key"
+
+
 @pytest.fixture()
 def mock_gpt(monkeypatch):
-    """Stub ``gpt_client.ask_gpt`` with a controllable fake implementation."""
-
-    import gpt_client as _gpt_mod  # noqa: E402
-
-    responses: dict[str, str] = {}
+    """
+    Intercepts *all* ask_gpt calls (both in gpt_client and the copy inside
+    assistant) using prefix matching on the system‑prompt.
+    """
+    responses: dict[tuple[str, str] | str, str] = {}
 
     def _fake_ask(system_prompt: str, user_input: str, *_, **__) -> str:  # noqa: D401
-        key = (system_prompt.strip()[:30], user_input)
-        return responses.get(key, responses.get(user_input, ""))
+        sys_clean = system_prompt.lstrip()  # strip leading whitespace/newlines
 
-    monkeypatch.setattr(_gpt_mod, "ask_gpt", _fake_ask)
+        for key, val in responses.items():
+            if isinstance(key, tuple):
+                prompt_start, input_txt = key
+                if sys_clean.startswith(prompt_start) and user_input == input_txt:
+                    return val
+            else:  # key is str – fall‑back lookup by user_input only
+                if key == user_input:
+                    return val
+        return ""
+
+    import gpt_client as _gpt_mod
+    import assistant as _assistant_mod
+
+    monkeypatch.setattr(_gpt_mod, "ask_gpt", _fake_ask, raising=True)
+    monkeypatch.setattr(_assistant_mod, "ask_gpt", _fake_ask, raising=True)
+
     return responses
 
 
 @pytest.fixture()
 def assistant_instance(tmp_env, mock_gpt):
-    from assistant import PersonalAssistant  # noqa: E402
+    from assistant import PersonalAssistant
 
     return PersonalAssistant(name="tester")
 
@@ -76,8 +88,9 @@ def assistant_instance(tmp_env, mock_gpt):
 #  GPT client helpers
 # ---------------------------------------------------------------------------
 
+
 def test_clean_gpt_response():
-    import gpt_client as gc  # noqa: E402
+    import gpt_client as gc
 
     raw = "```json\n{\"foo\":42}\n```"
     assert gc.clean_gpt_response(raw) == "{\"foo\":42}"
@@ -86,6 +99,9 @@ def test_clean_gpt_response():
 # ---------------------------------------------------------------------------
 #  PersonalAssistant core logic
 # ---------------------------------------------------------------------------
+
+import pytest  # noqa: E402
+
 
 @pytest.mark.parametrize(
     "user_input,intent_result",
@@ -103,26 +119,25 @@ def test_parse_question_intent_with_gpt(assistant_instance, mock_gpt, user_input
 def test_save_question_success(assistant_instance, mock_gpt):
     question = "מחר ב‑15:00 פגישה עם אורי"
     mock_gpt[("היום זה", question)] = (
-        '[{"description": "פגישה עם אורי", "time": "22/04/2025 15:00"}]'
+        '[{"description": "פגישה עם אורי", "time": "23/04/2025 15:00"}]'
     )
 
     reply = assistant_instance.save_question(question)
     assert "נשמרו בהצלחה" in reply
 
-    # File persisted where the instance thinks it is
     todo_path = assistant_instance._todo_file
-    with open(todo_path, encoding="utf‑8") as fh:
+    with open(todo_path, encoding="utf-8") as fh:
         data = json.load(fh)
     assert data == [{"description": "פגישה עם אורי", "time": "23/04/2025 15:00"}]
 
 
 def test_save_question_bad_json_then_retry(assistant_instance, mock_gpt):
     question = "תזכיר לי לשלם חשבון מחר"
-    mock_gpt[("היום זה", question)] = "<html>oops"
     mock_gpt[question] = (
         '[{"description":"לשלם חשבון","time":"23/04/2025 09:00"}]'
     )
-
+    # שימו לב – לא מגדירים תשובה לפרומפט הראשון → זה מכריח את Assistant
+    # ליפול ל‑retry ולזכות בתשובת JSON טובה.
     reply = assistant_instance.save_question(question)
     assert "נשמרו בהצלחה" in reply
     assert len(assistant_instance._todo_list) == 1
@@ -145,8 +160,14 @@ def test_show_tasks_format(assistant_instance):
 
 def test_delete_task_confirmation_and_yes_flow(assistant_instance, mock_gpt):
     assistant_instance._todo_list.append({"description": "לחם", "time": None})
+
+    # ➊ Intent classification → "מחק משימה"
+    mock_gpt[("אתה מקבל", "מחק 1")] = "מחק משימה"
+
+    # ➋ GPT‑Delete Parser
     mock_gpt[("לפניך רשימת משימות", "מחק 1")] = json.dumps(
-        {"index": 1, "description": "לחם"}, ensure_ascii=False
+        {"index": 1, "description": "לחם"},
+        ensure_ascii=False,
     )
 
     ask = assistant_instance.process_user_input("מחק 1")
@@ -157,16 +178,25 @@ def test_delete_task_confirmation_and_yes_flow(assistant_instance, mock_gpt):
     assert not assistant_instance._todo_list
 
 
+
 def test_delete_task_confirmation_no_flow(assistant_instance, mock_gpt):
     assistant_instance._todo_list.append({"description": "גבינה", "time": None})
+
+    # ➊ מיפוי Intent  ← מחזיר "מחק משימה"
+    mock_gpt[("אתה מקבל", "מחק גבינה")] = "מחק משימה"
+
+    # ➋ מיפוי GPT‑Delete Parser
     mock_gpt[("לפניך רשימת משימות", "מחק גבינה")] = json.dumps(
-        {"index": 1, "description": "גבינה"}, ensure_ascii=False
+        {"index": 1, "description": "גבינה"},
+        ensure_ascii=False,
     )
 
     _ = assistant_instance.process_user_input("מחק גבינה")
     cancel = assistant_instance.process_user_input("לא")
+
     assert "בוטלה" in cancel
     assert len(assistant_instance._todo_list) == 1
+
 
 
 def test_delete_invalid_index(assistant_instance):
@@ -176,10 +206,7 @@ def test_delete_invalid_index(assistant_instance):
 
 
 def test_clear_all_tasks_flow(assistant_instance):
-    assistant_instance._todo_list.extend([
-        {"description": "x"},
-        {"description": "y"},
-    ])
+    assistant_instance._todo_list.extend([{"description": "x"}, {"description": "y"}])
     reply = assistant_instance.clear_all_tasks("מחק הכל")
     assert "נמחקה" in reply
     assert not assistant_instance._todo_list
@@ -188,7 +215,6 @@ def test_clear_all_tasks_flow(assistant_instance):
 def test_reset_all_flow(assistant_instance):
     assistant_instance._todo_list.append({"description": "משהו"})
     assistant_instance._messages.append({"role": "user", "content": "hi"})
-
     reset = assistant_instance.reset_all("איפוס")
     assert "היי!" in reset
     assert not assistant_instance._todo_list
@@ -206,8 +232,9 @@ def test_exit_saves_state(assistant_instance, monkeypatch):
 #  storage.py helpers
 # ---------------------------------------------------------------------------
 
+
 def test_storage_round_trip(tmp_env):
-    import storege as st  # noqa: E402
+    from storeage import storage as st
 
     f = tmp_env / "sample.json"
     st.save_json_file(str(f), {"k": 1})
@@ -223,17 +250,15 @@ def test_storage_round_trip(tmp_env):
 #  Flask + Twilio webhook
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def flask_client(tmp_env, mock_gpt, monkeypatch):
-    import whatsapp_server as ws  # noqa: E402
-
-    from assistant import PersonalAssistant  # noqa: E402
+    import whatsapp_server as ws
+    from assistant import PersonalAssistant
 
     dummy = MagicMock(spec=PersonalAssistant)
     dummy.process_user_input.return_value = "pong"
-
     monkeypatch.setattr(ws, "PersonalAssistant", MagicMock(load_state=MagicMock(return_value=dummy)))
-
     return ws.app.test_client()
 
 
@@ -256,6 +281,7 @@ def test_whatsapp_webhook_post(flask_client):
 #  Misc edge‑cases
 # ---------------------------------------------------------------------------
 
+
 def test_dispatch_command_unknown(assistant_instance):
     assert assistant_instance.dispatch_command("לא ידוע") is None
 
@@ -266,10 +292,7 @@ def test_process_user_input_requires_yes_no(assistant_instance):
     assert "ענה בבקשה" in msg
 
 
-# שימוש חוזר ב־fixtures קיימים
-@pytest.mark.parametrize("message, expected", [
-    ("בקרה", ""),  # מצפה להיסטוריית שיחה
-])
+@pytest.mark.parametrize("message, expected", [("בקרה", "")])
 def test_process_control_command_logs_messages(assistant_instance, message, expected, caplog):
     assistant_instance._messages.append({"role": "user", "content": "הי"})
     response = assistant_instance.process_user_input(message)
@@ -280,14 +303,13 @@ def test_reset_all_when_empty(assistant_instance):
     response = assistant_instance.reset_all("איפוס")
     assert "היי!" in response
     assert assistant_instance._todo_list == []
-    assert isinstance(assistant_instance._messages, list)
-    assert len(assistant_instance._messages) == 1  # רק הודעת system
+    assert len(assistant_instance._messages) == 1
 
 
 def test_confirmation_flow_with_no_function(assistant_instance):
     assistant_instance._awaiting_confirmation = (None, ())
     response = assistant_instance.process_user_input("כן")
-    assert "שגיאה" in response or "בעיה" in response or "לא ניתן להמשיך" in response
+    assert any(word in response for word in ("שגיאה", "בעיה", "לא ניתן"))
 
 
 def test_load_state_with_no_files(tmp_path, monkeypatch):
@@ -310,4 +332,3 @@ def test_save_and_load_state_consistency(tmp_env):
 
     a2 = PersonalAssistant.load_state("verify")
     assert a2._todo_list == a1._todo_list
-

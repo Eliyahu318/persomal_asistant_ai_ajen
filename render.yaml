@@ -3,7 +3,7 @@ services:
     name: whatsapp-bot
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python whatsapp_server.py"
+    startCommand: "python server.py"
     plan: free
     envVars:
       - key: OPENAI_API_KEY   # אם עוד לא הגדרת – חובה!

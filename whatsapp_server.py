@@ -25,7 +25,7 @@ def whatsapp_webhook():
 
     assistant = user_sessions[from_number]
 
-    response_text = assistant.process_user_input(incoming_msg)
+    response_text = assistant.process_user_message(incoming_msg)
     twiml = MessagingResponse()
     twiml.message(response_text)
     print(response_text)

@@ -2,9 +2,9 @@ import json
 import logging
 import os
 from datetime import date, datetime
-from openai import OpenAI
 from typing import Callable, Optional
 
+from config import settings
 from prompts import PARSE_DELETE_QUESTION_WITH_GPT_PROMPT
 from prompts import PARSE_QUESTION_WITH_GPT_PROMPT
 from prompts import PARSE_TASK_WITH_GPT_PROMPT
@@ -25,19 +25,19 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 # Set your OpenAI API key
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI()
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# client = OpenAI(api_key=settings.openai_api_key)
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-FILE_TASKS_NAME = os.path.join(BASE_DIR, "data", "todo_list_{name}.json")
-FILE_MESSAGES_NAME = os.path.join(BASE_DIR, "data", "chat_log_{name}.json")
+FILE_TASKS_NAME = str(settings.data_dir / settings.lead_template)  # os.path.join(BASE_DIR, "data", "todo_list_{name}.json")
+FILE_MESSAGES_NAME = str(settings.data_dir / settings.chat_template)  # os.path.join(BASE_DIR, "data", "chat_log_{name}.json")
 
 WELCOME_MESSAGE = "היי! התחלת שיחה עם {name} - העוזר האישי שלך. מה ברצונך?"
 TODAY = date.today().isoformat()  # Current date for temporal context
 
 
 class PersonalAssistant:
-    def __init__(self, name: str, todo_list=None, messages=None, confirm_callback=None):
+    def __init__(self, name: str, todo_list=None, messages=None, confirm_callback=None, settings=settings):
         """
         Initializes the PersonalAssistant instance.
 
@@ -51,6 +51,7 @@ class PersonalAssistant:
         self._awaiting_confirmation = None
         self._todo_file = FILE_TASKS_NAME.format(name=name)
         self._chat_file = FILE_MESSAGES_NAME.format(name=name)
+        self._settings = settings
 
         ensure_file_exists(self._todo_file)
         ensure_file_exists(self._chat_file)
@@ -104,13 +105,14 @@ class PersonalAssistant:
             if answer == "כן":
                 func, args = self._awaiting_confirmation
                 self._awaiting_confirmation = None
-                if func is not None:
+                if args:
                     response_text = func(*args)
-                    self.keep_chat_history(question, response_text)
-                    return response_text
                 else:
-                    response_text = "שגיאה. לא קיימת פעולה לאישור. איך אפשר לעזור?"
-                    return response_text
+                    response_text = func()
+                if func != self.reset_all:
+                    self.keep_chat_history(question, response_text)
+                return response_text
+
             elif answer == "לא":
                 self._awaiting_confirmation = None
                 response_text = "הפעולה בוטלה. איך אפשר לעזור?"
@@ -124,7 +126,7 @@ class PersonalAssistant:
             return "להתראות!"
 
         elif question == "בקרה":
-            logging.debug(self._messages)
+            # logging.debug(self._messages)
             return str(self._messages)  # "📊 היסטוריית השיחה הודפסה ללוג."
 
         else:
@@ -132,9 +134,13 @@ class PersonalAssistant:
             handler = self.dispatch_command(intent)
             if handler:
                 try:
-                    return handler(question)
+                    response = handler(question)
+                    return response
                 except TypeError:
-                    return handler()
+                    response = handler()
+                    return response
+                finally:
+                    self.keep_chat_history(question, response)
 
             else:
                 self.keep_chat_history(question, intent)
@@ -191,14 +197,14 @@ class PersonalAssistant:
                 self._todo_list.extend(task)
                 save_json_file(self._todo_file, self._todo_list)
                 response_text = f"{len(task)} משימות נשמרו בהצלחה. איך עוד אפשר לעזור?"
-                self.keep_chat_history(question, response_text)
+                # self.keep_chat_history(question, response_text)
                 return response_text
             else:
                 raise Exception("No tasks returned from GPT")
 
         except Exception as e:
             response_text = "לא הצלחתי להבין את המשימה. נסה לנסח שוב."
-            self.keep_chat_history(question, response_text)
+            # self.keep_chat_history(question, response_text)
             if DEBUG_MODE:
                 logging.debug(f"שגיאה: {e}")
             return response_text
@@ -261,14 +267,14 @@ class PersonalAssistant:
             desc = task["description"]
             self._awaiting_confirmation = (self.delete_task, (index, desc, question))
             response_text = f'האם למחוק את המשימה: "{desc}" (#{index})? [כן/לא]'
-            self.keep_chat_history(question, response_text)
+            # self.keep_chat_history(question, response_text)
             return response_text
         except Exception:
             response_text = "❌ לא הצלחתי להבין מה למחוק."
-            self.keep_chat_history(question, response_text)
+            # self.keep_chat_history(question, response_text)
             return response_text
 
-    def clear_all_tasks(self, question):
+    def clear_all_tasks(self):
         """Clears all saved tasks."""
         save_json_file(self._todo_file, self._todo_list)
         self._todo_list.clear()
@@ -278,9 +284,9 @@ class PersonalAssistant:
 
     def ensure_delete_all_tasks_intent(self, original_question: str):
         """Executes confirmed deletion all task."""
-        self._awaiting_confirmation = (self.clear_all_tasks, original_question)
+        self._awaiting_confirmation = (self.clear_all_tasks, None)
         response_text = "האם למחוק את כל המשימות? [כן/לא]"
-        self.keep_chat_history(original_question, response_text)
+        # self.keep_chat_history(original_question, response_text)
         return response_text
 
     def clear_messages(self) -> str:
@@ -293,9 +299,9 @@ class PersonalAssistant:
         self._messages.clear()
         return "היסטוריית השיחות נמחקה"
 
-    def reset_all(self, question: str) -> str:
+    def reset_all(self) -> str:
         """Performs a full reset of tasks and messages."""
-        self.clear_all_tasks(question)
+        self.clear_all_tasks()
         self.clear_messages()
         self._messages.append({
             "role": "system",
@@ -305,9 +311,9 @@ class PersonalAssistant:
 
     def ensure_reset_intent(self, original_question: str):
         """Executes confirmed reset"""
-        self._awaiting_confirmation = (self.reset_all, original_question)
+        self._awaiting_confirmation = (self.reset_all, None)
         response_text = "האם ברצונך לאפס הכל ולמחוק את המשמיות ואת היסטוריית השיחה? [כן/לא]"
-        self.keep_chat_history(original_question, response_text)
+        # self.keep_chat_history(original_question, response_text)
         return response_text
 
     def keep_chat_history(self, question, response):
