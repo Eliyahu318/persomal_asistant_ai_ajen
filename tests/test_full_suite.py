@@ -25,7 +25,7 @@ def tmp_env(tmp_path, monkeypatch):
 
     # 2) patch data‑files base‑dir
     import assistant as _assistant_mod
-    from storeage import storage as _storege_mod
+    from storage import storage as _storege_mod
 
     tmp_dir = str(tmp_path)
     _assistant_mod.FILE_TASKS_NAME = f"{tmp_dir}/todo_list_{{name}}.json"
@@ -234,7 +234,7 @@ def test_exit_saves_state(assistant_instance, monkeypatch):
 
 
 def test_storage_round_trip(tmp_env):
-    from storeage import storage as st
+    from storage import storage as st
 
     f = tmp_env / "sample.json"
     st.save_json_file(str(f), {"k": 1})
